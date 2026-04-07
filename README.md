@@ -110,7 +110,7 @@ TIMER	0x1000_2000	4KB
 联系方式
 作者：Yi Fengxin
 
-单位：北京航空航天大学杭州国际创新研究院
+单位：北京航空航天大学
 
 邮箱：
 
@@ -234,7 +234,7 @@ TIMER	0x1000_2000	4KB
 Contact
 Author: Yi Fengxin
 
-Affiliation: Beijing University of Aeronautics and Astronautics (BUAA), Hangzhou International Innovation Institute
+Affiliation: Beihang University
 
 Email:
 
