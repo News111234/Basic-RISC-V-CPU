@@ -1,24 +1,42 @@
 // rtl/periph/timer.v - 修正版（正确的中断逻辑）
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: timer
+// 功能: 定时器，提供递减计数和中断功能
+// 描述:
+//   该模块实现一个32位递减定时器:
+//   - 写入LOAD寄存器设置计数初值
+//   - 使能后每个时钟周期计数器减1
+//   - 计数器减到0时触发中断
+//   - 支持单次模式和自动重载模式
+//
+//   寄存器地址映射:
+//     0x00: TIMER_CTRL  - 控制寄存器 (bit0: enable, bit1: auto_reload, bit2: clr_irq)
+//     0x04: TIMER_LOAD  - 加载寄存器 (写入初值)
+//     0x08: TIMER_COUNT - 当前计数值 (只读)
+//     0x0C: TIMER_IER   - 中断使能寄存器 (bit0: irq_enable)
+// ============================================================================
 module timer (
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    
-    // 总线接口
-    input  wire        we_i,
-    input  wire        re_i,
-    input  wire [31:0] addr_i,
-    input  wire [31:0] wdata_i,
-    output reg  [31:0] rdata_o,
-    
-    // 中断输出
-    output reg         interrupt_o,
+    // ========== 系统接口 ==========
+    input  wire        clk_i,          // 时钟信号
+    input  wire        rst_n_i,        // 复位信号 (低电平有效)
 
-    output wire [31:0] debug_load_value,
-    output wire [31:0] debug_counter,
-    output wire        debug_enable,
-    output wire        debug_irq_flag
+    // ========== 总线接口 ==========
+    input  wire        we_i,           // 写使能
+    input  wire        re_i,           // 读使能
+    input  wire [31:0] addr_i,         // 寄存器地址
+    input  wire [31:0] wdata_i,        // 写数据
+    output reg  [31:0] rdata_o,        // 读数据
+
+    // ========== 中断输出 ==========
+    output reg         interrupt_o,    // 定时器中断信号
+
+    // ========== 调试输出 ==========
+    output wire [31:0] debug_load_value, // 调试: 加载值
+    output wire [31:0] debug_counter,    // 调试: 当前计数值
+    output wire        debug_enable,     // 调试: 使能标志
+    output wire        debug_irq_flag    // 调试: 中断标志
 );
 
 // 寄存器地址偏移

@@ -1,42 +1,54 @@
 // rtl/pipeline/id_ex_reg.v (修改版)
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: id_ex_reg
+// 功能: ID/EX 流水线寄存器，连接译码阶段和执行阶段
+// 描述:
+//   该寄存器锁存ID阶段产生的所有控制信号和数据，传递给EX阶段。
+//   包含: PC、寄存器数据、立即数、寄存器地址、ALU控制、内存控制、
+//   写回控制、分支/跳转控制、CSR控制等。
+//   支持停顿(stall)、常规冲刷(flush)和中断冲刷(intr_flush)。
+// ============================================================================
 module id_ex_reg (
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    input  wire        stall_i,
-    input  wire        flush_i,         // 常规冲刷
-    input  wire        intr_flush_i,    // 新增：中断冲刷
-    
-    input  wire [31:0] id_pc_i,
-    input  wire [31:0] id_rs1_data_i,
-    input  wire [31:0] id_rs2_data_i,
-    input  wire [31:0] id_imm_i,
-    input  wire [4:0]  id_rs1_addr_i,
-    input  wire [4:0]  id_rs2_addr_i,
-    input  wire [4:0]  id_rd_addr_i,
-    
-    input  wire [3:0]  id_alu_op_i,
-    input  wire        id_alu_src_i,
-    input  wire        id_mem_we_i,
-    input  wire        id_mem_re_i,
-    input  wire [2:0]  id_mem_width_i,
-    input  wire [1:0]  id_wb_sel_i,
-    input  wire        id_reg_we_i,
-    input  wire        id_branch_i,
-    input  wire        id_jump_i,
-    input  wire [2:0]  id_funct3_i,
-    input  wire [6:0]  id_opcode_i,
-    
-    // 新增：CSR相关信号
-    input  wire        id_csr_inst_i,
-    input  wire [11:0] id_csr_addr_i,
-    input  wire [2:0]  id_csr_op_i,
-    input  wire [4:0]  id_csr_zimm_i,
+    // ========== 系统接口 ==========
+    input  wire        clk_i,          // 时钟信号
+    input  wire        rst_n_i,        // 复位信号 (低电平有效)
 
-     input  wire        id_mret_i,
-    output reg         ex_mret_o,
-    
+    // ========== 流水线控制信号 ==========
+    input  wire        stall_i,        // 停顿标志
+    input  wire        flush_i,        // 常规冲刷标志
+    input  wire        intr_flush_i,   // 中断冲刷标志
+
+    // ========== ID阶段输入 ==========
+    input  wire [31:0] id_pc_i,        // PC
+    input  wire [31:0] id_rs1_data_i,  // rs1数据
+    input  wire [31:0] id_rs2_data_i,  // rs2数据
+    input  wire [31:0] id_imm_i,       // 立即数
+    input  wire [4:0]  id_rs1_addr_i,  // rs1地址
+    input  wire [4:0]  id_rs2_addr_i,  // rs2地址
+    input  wire [4:0]  id_rd_addr_i,   // 目标寄存器地址
+
+    input  wire [3:0]  id_alu_op_i,    // ALU操作码
+    input  wire        id_alu_src_i,   // ALU源选择
+    input  wire        id_mem_we_i,    // 内存写使能
+    input  wire        id_mem_re_i,    // 内存读使能
+    input  wire [2:0]  id_mem_width_i, // 内存访问宽度
+    input  wire [1:0]  id_wb_sel_i,    // 写回选择
+    input  wire        id_reg_we_i,    // 寄存器写使能
+    input  wire        id_branch_i,    // 分支标志
+    input  wire        id_jump_i,      // 跳转标志
+    input  wire [2:0]  id_funct3_i,    // funct3字段
+    input  wire [6:0]  id_opcode_i,    // 操作码
+
+    // ========== CSR相关输入 ==========
+    input  wire        id_csr_inst_i,  // CSR指令标志
+    input  wire [11:0] id_csr_addr_i,  // CSR地址
+    input  wire [2:0]  id_csr_op_i,    // CSR操作类型
+    input  wire [4:0]  id_csr_zimm_i,  // CSR立即数
+    input  wire        id_mret_i,      // MRET指令标志
+
+    // ========== EX阶段输出 ==========
     output reg  [31:0] ex_pc_o,
     output reg  [31:0] ex_rs1_data_o,
     output reg  [31:0] ex_rs2_data_o,
@@ -44,7 +56,7 @@ module id_ex_reg (
     output reg  [4:0]  ex_rs1_addr_o,
     output reg  [4:0]  ex_rs2_addr_o,
     output reg  [4:0]  ex_rd_addr_o,
-    
+
     output reg  [3:0]  ex_alu_op_o,
     output reg         ex_alu_src_o,
     output reg         ex_mem_we_o,
@@ -56,14 +68,13 @@ module id_ex_reg (
     output reg         ex_jump_o,
     output reg  [2:0]  ex_funct3_o,
     output reg  [6:0]  ex_opcode_o,
-    
-    // 新增：CSR相关输出
+
+    // ========== CSR相关输出 ==========
     output reg         ex_csr_inst_o,
     output reg  [11:0] ex_csr_addr_o,
     output reg  [2:0]  ex_csr_op_o,
-    output reg  [4:0]  ex_csr_zimm_o
-
-    
+    output reg  [4:0]  ex_csr_zimm_o,
+    output reg         ex_mret_o
 );
 
 always @(posedge clk_i ) begin

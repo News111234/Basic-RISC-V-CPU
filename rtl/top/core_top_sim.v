@@ -1,229 +1,242 @@
 // top/core_top_sim.v (完整修复版 - 移除 interrupt_handler 相关代码)
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: core_top_sim
+// 功能: RISC-V CPU 顶层仿真模块，集成所有子模块
+// 描述:
+//   该模块是RISC-V处理器核的最高层集成模块，用于仿真测试。
+//   它实例化并连接以下所有子系统:
+//   - IFU (指令取指单元): pc_reg, inst_rom
+//   - 流水线寄存器: IF/ID, ID/EX, EX/MEM, MEM/WB
+//   - IDU (译码单元): decoder, imm_gen, regfile, ctrl
+//   - EXU (执行单元): alu, branch, ex_top
+//   - MEM (访存单元): mem_top_fpga, data_ram
+//   - WBU (写回单元): wb_mux, wb_top
+//   - Hazard单元: forwarding_unit, hazard_unit
+//   - CSR单元: csr_regfile, csr_instructions, csr_controller
+//   - 中断单元: interrupt_controller, interrupt_pipeline
+//   - 总线仲裁器: bus_arbiter
+//   - 外设: uart_ctrl, gpio, timer
+//
+//   该模块提供了大量的调试输出信号，用于观察处理器内部状态。
+// ============================================================================
 module core_top_sim (
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    output wire        uart_tx_o,
+    // ========== 系统接口 ==========
+    input  wire        clk_i,          // 时钟信号 (通常200MHz)
+    input  wire        rst_n_i,        // 复位信号 (低电平有效)
 
-    // ========== 调试输出端口 ==========
-    output wire [31:0] debug_if_pc,
-    output wire [31:0] debug_if_instr,
-    output wire [31:0] debug_id_rs1_data,
-    output wire [31:0] debug_id_rs2_data,
-    output wire [31:0] debug_ex_alu_result,
-    output wire [31:0] debug_ex_mem_addr,
-    output wire [31:0] debug_ex_mem_wdata,
-    output wire        debug_ex_mem_we,
-    output wire [2:0]  debug_ex_mem_width,
-    
-    output wire        debug_mem_bus_we,
-    output wire [31:0] debug_mem_bus_addr,
-    output wire [31:0] debug_mem_bus_wdata,
-    output wire [31:0] debug_mem_bus_rdata,
+    // ========== UART输出 ==========
+    output wire        uart_tx_o,      // UART发送引脚
 
-    output wire        debug_bus_uart_we,
-    output wire [31:0] debug_bus_uart_addr,
-    output wire [31:0] debug_bus_uart_wdata,
-    
-    output wire [4:0]  debug_id_rs1_addr,
-    output wire [4:0]  debug_id_rs2_addr,
-    
-    //寄存器
-    output wire [31:0] debug_x0,
-    output wire [31:0] debug_x1,
-    output wire [31:0] debug_x2,
-    output wire [31:0] debug_x3,
-    output wire [31:0] debug_x4,
-    output wire [31:0] debug_x5_t0,
-    output wire [31:0] debug_x6_t1,
-    output wire [31:0] debug_x7_t2,
-    output wire [31:0] debug_x8_t3,
-    output wire [31:0] debug_x9_t4,
-    output wire [31:0] debug_x10_a0,
-    output wire [31:0] debug_x11_a1,
-    output wire [31:0] debug_x12_a2,
-    output wire [31:0] debug_x13,
-    output wire [31:0] debug_x14,
+    // ========== 调试输出端口 (IF阶段) ==========
+    output wire [31:0] debug_if_pc,         // IF阶段PC
+    output wire [31:0] debug_if_instr,      // IF阶段指令
 
-    output wire [2:0]  debug_uart_state,
-    output wire [31:0] debug_uart_baud_cnt,
-    output wire [3:0]  debug_uart_bit_cnt,
-    output wire [7:0]  debug_uart_shift_reg,
-    
-    output wire [7:0]  debug_uart_fifo_data0,
-    output wire [7:0]  debug_uart_fifo_data1,
-    output wire [7:0]  debug_uart_fifo_data2,
-    output wire [7:0]  debug_uart_fifo_data3,
-    output wire [7:0]  debug_uart_fifo_data4,
-    output wire [7:0]  debug_uart_fifo_data5,
-    output wire [7:0]  debug_uart_fifo_data6,
-    output wire [7:0]  debug_uart_fifo_data7,
-    output wire [7:0]  debug_uart_fifo_data8,
-    output wire [7:0]  debug_uart_fifo_data9,
-    output wire [7:0]  debug_uart_fifo_data10,
-    output wire [7:0]  debug_uart_fifo_data11,
-    output wire [7:0]  debug_uart_fifo_data12,
-    output wire [7:0]  debug_uart_fifo_data13,
-    output wire [7:0]  debug_uart_fifo_data14,
-    output wire [7:0]  debug_uart_fifo_data15,
+    // ========== 调试输出端口 (ID阶段) ==========
+    output wire [31:0] debug_id_rs1_data,   // ID阶段rs1数据
+    output wire [31:0] debug_id_rs2_data,   // ID阶段rs2数据
+    output wire [4:0]  debug_id_rs1_addr,   // ID阶段rs1地址
+    output wire [4:0]  debug_id_rs2_addr,   // ID阶段rs2地址
 
-    output wire [3:0]  debug_uart_wr_ptr,
-    output wire [3:0]  debug_uart_rd_ptr,
-    output wire [4:0]  debug_uart_fifo_count,
-    output wire        debug_uart_fifo_full,
-    output wire        debug_uart_fifo_empty,
-    output wire        debug_uart_fifo_we,
-    output wire        debug_uart_fifo_re,
-    
-    // CSR/中断调试输出
-    output wire [31:0] debug_mstatus,
-    output wire [31:0] debug_mie,
-    output wire [31:0] debug_mtvec,
-    output wire [31:0] debug_mepc,
-    output wire [31:0] debug_mcause,
-    output wire [31:0] debug_mip,
-    output wire        debug_interrupt_pending,
-    output wire        debug_interrupt_taken,
+    // ========== 调试输出端口 (EX阶段) ==========
+    output wire [31:0] debug_ex_alu_result, // EX阶段ALU结果
+    output wire [31:0] debug_ex_mem_addr,   // EX阶段内存地址
+    output wire [31:0] debug_ex_mem_wdata,  // EX阶段内存写数据
+    output wire        debug_ex_mem_we,     // EX阶段内存写使能
+    output wire [2:0]  debug_ex_mem_width,  // EX阶段内存宽度
 
-    //中断调试
-    output wire [31:0] debug_csr_inst_pc,
-    output wire        debug_csr_inst_valid,
-    output wire [31:0] debug_csr_inst_instr,
-    output wire        debug_csr_write,
-    output wire [11:0] debug_csr_write_addr,
-    output wire [31:0] debug_csr_write_data,
-    output wire [31:0] debug_t0_value,
-    output wire [31:0] debug_instr_4,
-    output wire [31:0] debug_instr_5,
-    output wire [31:0] debug_instr_6,
-    output wire [31:0] debug_instr_7,
+    // ========== 调试输出端口 (MEM阶段 - 总线) ==========
+    output wire        debug_mem_bus_we,    // 总线写使能
+    output wire [31:0] debug_mem_bus_addr,  // 总线地址
+    output wire [31:0] debug_mem_bus_wdata, // 总线写数据
+    output wire [31:0] debug_mem_bus_rdata, // 总线读数据
 
-    output wire [31:0] debug_ex_csr_result,
-    output wire [31:0] debug_ex_mem_csr_result,
+    // ========== 调试输出端口 (UART总线) ==========
+    output wire        debug_bus_uart_we,   // UART总线写使能
+    output wire [31:0] debug_bus_uart_addr, // UART总线地址
+    output wire [31:0] debug_bus_uart_wdata,// UART总线写数据
 
-    //定时计数
-    output wire [6:0] debug_timer_counter,
-    output wire        debug_timer_irq,
+    // ========== 调试输出端口 (通用寄存器) ==========
+    output wire [31:0] debug_x0,  debug_x1,  debug_x2,  debug_x3,
+    output wire [31:0] debug_x4,  debug_x5_t0, debug_x6_t1, debug_x7_t2,
+    output wire [31:0] debug_x8_t3, debug_x9_t4, debug_x10_a0, debug_x11_a1,
+    output wire [31:0] debug_x12_a2, debug_x13, debug_x14,
 
-    // ID阶段
-    output wire        debug_id_csr_inst,
-    output wire [11:0] debug_id_csr_addr,
-    output wire [2:0]  debug_id_csr_op,
-    output wire [4:0]  debug_id_csr_zimm,
-    
-    // ID/EX阶段
-    output wire        debug_ex_csr_inst,
-    output wire [11:0] debug_ex_csr_addr,
-    output wire [2:0]  debug_ex_csr_op,
-    output wire [4:0]  debug_ex_csr_zimm,
-    
-    // CSR指令处理模块
-    output wire [2:0]  debug_csr_inst_op,
-    output wire [11:0] debug_csr_inst_addr,
-    output wire [4:0]  debug_csr_inst_rs1,
-    output wire [31:0] debug_csr_inst_rs1_data,
-    output wire [31:0] debug_csr_inst_imm,
-    output wire [31:0] debug_csr_inst_rdata,
-    output wire        debug_csr_inst_we,
-    output wire [11:0] debug_csr_inst_waddr,
-    output wire [31:0] debug_csr_inst_wdata,
-    output wire [31:0] debug_csr_inst_result,
-    
-    // 最终CSR写信号
-    output wire        debug_final_csr_we,
-    output wire [11:0] debug_final_csr_waddr,
-    output wire [31:0] debug_final_csr_wdata,
-    
-    output wire        debug_interrupt_taken_pipe,
+    // ========== 调试输出端口 (UART内部状态) ==========
+    output wire [2:0]  debug_uart_state,       // UART状态机
+    output wire [31:0] debug_uart_baud_cnt,    // 波特率计数器
+    output wire [3:0]  debug_uart_bit_cnt,     // 位计数器
+    output wire [7:0]  debug_uart_shift_reg,   // 移位寄存器
+    // UART FIFO调试信号 (16个数据输出)
+    output wire [7:0]  debug_uart_fifo_data0,  debug_uart_fifo_data1,
+    output wire [7:0]  debug_uart_fifo_data2,  debug_uart_fifo_data3,
+    output wire [7:0]  debug_uart_fifo_data4,  debug_uart_fifo_data5,
+    output wire [7:0]  debug_uart_fifo_data6,  debug_uart_fifo_data7,
+    output wire [7:0]  debug_uart_fifo_data8,  debug_uart_fifo_data9,
+    output wire [7:0]  debug_uart_fifo_data10, debug_uart_fifo_data11,
+    output wire [7:0]  debug_uart_fifo_data12, debug_uart_fifo_data13,
+    output wire [7:0]  debug_uart_fifo_data14, debug_uart_fifo_data15,
+    output wire [3:0]  debug_uart_wr_ptr,      // 写指针
+    output wire [3:0]  debug_uart_rd_ptr,      // 读指针
+    output wire [4:0]  debug_uart_fifo_count,  // FIFO计数
+    output wire        debug_uart_fifo_full,   // FIFO满标志
+    output wire        debug_uart_fifo_empty,  // FIFO空标志
+    output wire        debug_uart_fifo_we,     // FIFO写使能
+    output wire        debug_uart_fifo_re,     // FIFO读使能
 
-    output wire [1:0]  debug_interrupt_hold_cnt,
-    output wire        debug_interrupt_accepted,
-    output wire        debug_interrupt_condition,
-    output wire [4:0]  debug_interrupt_condition_bits,
-    output wire [31:0] debug_selected_pc,
-    output wire [2:0]  debug_selected_stage,
-    
-    // CSR寄存器文件接口
-    output wire [31:0] debug_csr_reg_rdata,
-    output wire        debug_csr_reg_we,
-    output wire [11:0] debug_csr_reg_waddr,
-    output wire [31:0] debug_csr_reg_wdata,
-   
-    //前递调试信号
-    output wire [1:0]  debug_forwardA,
-    output wire [1:0]  debug_forwardB,
-    output wire [4:0]  debug_id_ex_rs1,
-    output wire [4:0]  debug_id_ex_rs2,
+    // ========== 调试输出端口 (CSR/中断) ==========
+    output wire [31:0] debug_mstatus,          // 机器状态寄存器
+    output wire [31:0] debug_mie,              // 中断使能寄存器
+    output wire [31:0] debug_mtvec,            // 中断向量基址
+    output wire [31:0] debug_mepc,             // 异常PC
+    output wire [31:0] debug_mcause,           // 异常/中断原因
+    output wire [31:0] debug_mip,              // 中断待处理寄存器
+    output wire        debug_interrupt_pending, // 中断等待标志
+    output wire        debug_interrupt_taken,   // 中断被接受标志
 
-    output wire [4:0]  debug_ex_mem_rd,
-    output wire        debug_ex_mem_reg_we,
-    output wire        debug_ex_mem_mem_re,
+    // ========== 调试输出端口 (CSR指令跟踪) ==========
+    output wire [31:0] debug_csr_inst_pc,      // CSR指令PC
+    output wire        debug_csr_inst_valid,   // CSR指令有效
+    output wire [31:0] debug_csr_inst_instr,   // CSR指令
+    output wire        debug_csr_write,        // CSR写标志
+    output wire [11:0] debug_csr_write_addr,   // CSR写地址
+    output wire [31:0] debug_csr_write_data,   // CSR写数据
+    output wire [31:0] debug_t0_value,         // 调试临时值
+    output wire [31:0] debug_instr_4,          // 地址0x10的指令
+    output wire [31:0] debug_instr_5,          // 地址0x14的指令
+    output wire [31:0] debug_instr_6,          // 地址0x18的指令
+    output wire [31:0] debug_instr_7,          // 地址0x1C的指令
 
-    output wire [4:0]  debug_mem_wb_rd,
-    output wire        debug_mem_wb_reg_we,
-    
-    output wire [31:0] debug_ex_mem_alu_result,
-    output wire [31:0] debug_mem_forward_data,
-    output wire [31:0] debug_op1_selected,
-    output wire [31:0] debug_op2_selected,
-    output wire [4:0]  debug_rs1_addr_id,
-    output wire [4:0]  debug_rs2_addr_id,
-    output wire [31:0] debug_rs1_data_id,
-    output wire [31:0] debug_rs2_data_id,
+    // ========== 调试输出端口 (CSR结果传递) ==========
+    output wire [31:0] debug_ex_csr_result,     // EX阶段CSR结果
+    output wire [31:0] debug_ex_mem_csr_result, // EX/MEM阶段CSR结果
 
-    output wire        debug_id_ex_flush,
-    output wire        debug_id_ex_intr_flush,
-    output wire        debug_id_ex_stall,
+    // ========== 调试输出端口 (定时器) ==========
+    output wire [6:0]  debug_timer_counter,    // 定时器计数器
+    output wire        debug_timer_irq,         // 定时器中断
 
-    // Hazard Unit 调试信号
-    output wire        debug_stall_if,
-    output wire        debug_stall_id,
-    output wire        debug_flush_if,
-    output wire        debug_flush_id,
-    output wire        debug_load_use_hazard,
-    output wire        debug_control_hazard,
-    
-    output wire [4:0]  debug_hazard_rs1_addr,
-    output wire [4:0]  debug_hazard_rs2_addr,
-    output wire [4:0]  debug_hazard_ex_rd_addr,
-    output wire        debug_hazard_ex_reg_we,
-    output wire        debug_hazard_ex_mem_re,
-    
-    output wire [4:0]  debug_fwd_ex_mem_rd,
-    output wire        debug_fwd_ex_mem_reg_we,
-    output wire [4:0]  debug_fwd_mem_wb_rd,
-    output wire        debug_fwd_mem_wb_reg_we,
-    
-    output wire [31:0] debug_ex_op1,
-    output wire [31:0] debug_ex_op2,
-    output wire [31:0] debug_ex_rs1_original,
-    output wire [31:0] debug_ex_rs2_original,
-    
-    output wire [31:0] debug_next_pc,
-    output wire        debug_pc_changed,
+    // ========== 调试输出端口 (ID阶段CSR) ==========
+    output wire        debug_id_csr_inst,      // ID阶段CSR指令标志
+    output wire [11:0] debug_id_csr_addr,      // ID阶段CSR地址
+    output wire [2:0]  debug_id_csr_op,        // ID阶段CSR操作
+    output wire [4:0]  debug_id_csr_zimm,      // ID阶段CSR立即数
 
-    // GPIO 调试信号
-    output wire [31:0] debug_gpio_out,
-    output wire [31:0] debug_gpio_oe,
-    output wire [31:0] debug_gpio_in,
-    output wire [31:0] debug_gpio_if,
-    output wire        debug_gpio_interrupt,
+    // ========== 调试输出端口 (EX阶段CSR) ==========
+    output wire        debug_ex_csr_inst,      // EX阶段CSR指令标志
+    output wire [11:0] debug_ex_csr_addr,      // EX阶段CSR地址
+    output wire [2:0]  debug_ex_csr_op,        // EX阶段CSR操作
+    output wire [4:0]  debug_ex_csr_zimm,      // EX阶段CSR立即数
 
-    output wire        debug_bus_gpio_we,
-    output wire        debug_bus_gpio_re,
-    output wire [31:0] debug_bus_gpio_addr,
-    output wire [31:0] debug_bus_gpio_wdata,
-    output wire [31:0] debug_bus_gpio_rdata,
+    // ========== 调试输出端口 (CSR指令处理模块) ==========
+    output wire [2:0]  debug_csr_inst_op,      // CSR操作类型
+    output wire [11:0] debug_csr_inst_addr,    // CSR地址
+    output wire [4:0]  debug_csr_inst_rs1,     // rs1地址
+    output wire [31:0] debug_csr_inst_rs1_data,// rs1数据
+    output wire [31:0] debug_csr_inst_imm,     // 立即数
+    output wire [31:0] debug_csr_inst_rdata,   // CSR读数据
+    output wire        debug_csr_inst_we,      // CSR写使能
+    output wire [11:0] debug_csr_inst_waddr,   // CSR写地址
+    output wire [31:0] debug_csr_inst_wdata,   // CSR写数据
+    output wire [31:0] debug_csr_inst_result,  // CSR指令结果
 
-    // Timer 调试信号
-    output wire [31:0] debug_timer_load,
-    output wire [31:0] debug_timer_count,
-    output wire        debug_timer_enable,
-    output wire        debug_timer_irq_flag,
-    output wire        debug_timer_interrupt
+    // ========== 调试输出端口 (最终CSR写信号) ==========
+    output wire        debug_final_csr_we,     // 最终CSR写使能
+    output wire [11:0] debug_final_csr_waddr,  // 最终CSR写地址
+    output wire [31:0] debug_final_csr_wdata,  // 最终CSR写数据
+
+    // ========== 调试输出端口 (中断流水线) ==========
+    output wire        debug_interrupt_taken_pipe,   // 中断被接受
+    output wire [1:0]  debug_interrupt_hold_cnt,     // 中断保持计数
+    output wire        debug_interrupt_accepted,     // 中断接受标志
+    output wire        debug_interrupt_condition,    // 中断条件满足
+    output wire [4:0]  debug_interrupt_condition_bits, // 中断条件各比特
+    output wire [31:0] debug_selected_pc,            // 选中的保存PC
+    output wire [2:0]  debug_selected_stage,         // 选中的流水级
+
+    // ========== 调试输出端口 (CSR寄存器文件) ==========
+    output wire [31:0] debug_csr_reg_rdata,   // CSR读数据
+    output wire        debug_csr_reg_we,      // CSR写使能
+    output wire [11:0] debug_csr_reg_waddr,   // CSR写地址
+    output wire [31:0] debug_csr_reg_wdata,   // CSR写数据
+
+    // ========== 调试输出端口 (前递单元) ==========
+    output wire [1:0]  debug_forwardA,        // 操作数1前递选择
+    output wire [1:0]  debug_forwardB,        // 操作数2前递选择
+    output wire [4:0]  debug_id_ex_rs1,       // ID/EX rs1地址
+    output wire [4:0]  debug_id_ex_rs2,       // ID/EX rs2地址
+    output wire [4:0]  debug_ex_mem_rd,       // EX/MEM目标寄存器
+    output wire        debug_ex_mem_reg_we,   // EX/MEM写使能
+    output wire        debug_ex_mem_mem_re,   // EX/MEM load标志
+    output wire [4:0]  debug_mem_wb_rd,       // MEM/WB目标寄存器
+    output wire        debug_mem_wb_reg_we,   // MEM/WB写使能
+    output wire [31:0] debug_ex_mem_alu_result, // EX/MEM ALU结果
+    output wire [31:0] debug_mem_forward_data,  // MEM阶段前递数据
+    output wire [31:0] debug_op1_selected,      // 选择后的操作数1
+    output wire [31:0] debug_op2_selected,      // 选择后的操作数2
+    output wire [4:0]  debug_rs1_addr_id,       // ID阶段rs1地址
+    output wire [4:0]  debug_rs2_addr_id,       // ID阶段rs2地址
+    output wire [31:0] debug_rs1_data_id,       // ID阶段rs1数据
+    output wire [31:0] debug_rs2_data_id,       // ID阶段rs2数据
+
+    // ========== 调试输出端口 (流水线控制) ==========
+    output wire        debug_id_ex_flush,       // ID/EX冲刷
+    output wire        debug_id_ex_intr_flush,  // ID/EX中断冲刷
+    output wire        debug_id_ex_stall,       // ID/EX停顿
+
+    // ========== 调试输出端口 (冒险单元) ==========
+    output wire        debug_stall_if,          // IF停顿
+    output wire        debug_stall_id,          // ID停顿
+    output wire        debug_flush_if,          // IF冲刷
+    output wire        debug_flush_id,          // ID冲刷
+    output wire        debug_load_use_hazard,   // 加载-使用冒险
+    output wire        debug_control_hazard,    // 控制冒险
+    output wire [4:0]  debug_hazard_rs1_addr,   // 冒险检测rs1
+    output wire [4:0]  debug_hazard_rs2_addr,   // 冒险检测rs2
+    output wire [4:0]  debug_hazard_ex_rd_addr, // 冒险检测EX目标
+    output wire        debug_hazard_ex_reg_we,  // 冒险检测EX写使能
+    output wire        debug_hazard_ex_mem_re,  // 冒险检测EX load
+    output wire [4:0]  debug_fwd_ex_mem_rd,     // 前递EX/MEM目标
+    output wire        debug_fwd_ex_mem_reg_we, // 前递EX/MEM写使能
+    output wire [4:0]  debug_fwd_mem_wb_rd,     // 前递MEM/WB目标
+    output wire        debug_fwd_mem_wb_reg_we, // 前递MEM/WB写使能
+    output wire [31:0] debug_ex_op1,            // EX操作数1
+    output wire [31:0] debug_ex_op2,            // EX操作数2
+    output wire [31:0] debug_ex_rs1_original,   // EX原始rs1
+    output wire [31:0] debug_ex_rs2_original,   // EX原始rs2
+    output wire [31:0] debug_next_pc,           // 下一个PC
+    output wire        debug_pc_changed,        // PC变化标志
+
+    // ========== 调试输出端口 (GPIO) ==========
+    output wire [31:0] debug_gpio_out,          // GPIO输出寄存器
+    output wire [31:0] debug_gpio_oe,           // GPIO输出使能
+    output wire [31:0] debug_gpio_in,           // GPIO输入
+    output wire [31:0] debug_gpio_if,           // GPIO中断标志
+    output wire        debug_gpio_interrupt,    // GPIO中断
+    output wire        debug_bus_gpio_we,       // GPIO总线写
+    output wire        debug_bus_gpio_re,       // GPIO总线读
+    output wire [31:0] debug_bus_gpio_addr,     // GPIO总线地址
+    output wire [31:0] debug_bus_gpio_wdata,    // GPIO总线写数据
+    output wire [31:0] debug_bus_gpio_rdata,    // GPIO总线读数据
+
+    // ========== 调试输出端口 (定时器) ==========
+    output wire [31:0] debug_timer_load,        // 定时器加载值
+    output wire [31:0] debug_timer_count,       // 定时器当前计数值
+    output wire        debug_timer_enable,      // 定时器使能
+    output wire        debug_timer_irq_flag,    // 定时器中断标志
+    output wire        debug_timer_interrupt,    // 定时器中断输出
+//SPI和I2C调试信号
+    output wire        debug_spi_interrupt,
+output wire [1:0]  debug_spi_state,
+output wire [7:0]  debug_spi_tx_data,
+output wire [7:0]  debug_spi_rx_data,
+
+output wire        debug_i2c_interrupt,
+output wire [2:0]  debug_i2c_state,
+output wire [7:0]  debug_i2c_tx_data,
+output wire [7:0]  debug_i2c_rx_data,
+output wire        debug_i2c_ack
 );
-
 // ==========================================================================
 // CSR地址常量定义
 // ==========================================================================
@@ -451,7 +464,7 @@ wire        fwd_mem_wb_reg_we;
 
 wire       intr_software = 1'b0;
 wire       intr_timer;
-wire       intr_external = gpio_interrupt;
+
 
 wire [31:0] csr_rdata;
 wire [31:0] mtvec;
@@ -499,6 +512,39 @@ wire        intr_flush_ex;
 wire        intr_flush_mem;
 wire        intr_flush_wb;
 
+
+// SPI信号
+wire        spi_we;
+wire        spi_re;
+wire [31:0] spi_addr;
+wire [31:0] spi_wdata;
+wire [31:0] spi_rdata;
+wire        spi_sclk;
+wire        spi_mosi;
+wire        spi_miso;
+wire        spi_cs;
+wire        spi_interrupt;
+wire [1:0]  spi_state;
+wire [7:0]  spi_tx_data;
+wire [7:0]  spi_rx_data;
+
+// I2C信号
+wire        i2c_we;
+wire        i2c_re;
+wire [31:0] i2c_addr;
+wire [31:0] i2c_wdata;
+wire [31:0] i2c_rdata;
+wire        i2c_sda;
+wire        i2c_scl;
+wire        i2c_interrupt;
+wire [2:0]  i2c_state;
+wire [7:0]  i2c_tx_data;
+wire [7:0]  i2c_rx_data;
+wire        i2c_ack;
+
+wire       intr_external = gpio_interrupt || spi_interrupt || i2c_interrupt;
+// 测试用MISO信号（实际应用中连接到外部设备）
+reg         spi_miso_test;
 // ==========================================================================
 // 实例化所有模块
 // ==========================================================================
@@ -872,9 +918,21 @@ bus_arbiter u_bus_arbiter (
     .timer_re_o     (bus_timer_re),
     .timer_addr_o   (bus_timer_addr),
     .timer_wdata_o  (bus_timer_wdata),
-    .timer_rdata_i  (bus_timer_rdata)
+    .timer_rdata_i  (bus_timer_rdata),
+     // ==========  SPI 连接 ==========
+    .spi_we_o       (spi_we),
+    .spi_re_o       (spi_re),
+    .spi_addr_o     (spi_addr),
+    .spi_wdata_o    (spi_wdata),
+    .spi_rdata_i    (spi_rdata),
+    // ==========  I2C 连接 ==========
+    .i2c_we_o       (i2c_we),
+    .i2c_re_o       (i2c_re),
+    .i2c_addr_o     (i2c_addr),
+    .i2c_wdata_o    (i2c_wdata),
+    .i2c_rdata_i    (i2c_rdata)
 );
-
+//外设部分
 uart_ctrl #(
     .CLK_FREQ(200_000_000),
     .BAUD_RATE(115200)
@@ -959,6 +1017,45 @@ assign intr_timer = timer_interrupt;
 assign debug_timer_irq = timer_interrupt;
 assign debug_timer_counter = 7'b0;
 
+// SPI Master实例化
+spi_master u_spi_master (
+    .clk_i          (clk_i),
+    .rst_n_i        (rst_n_i),
+    .we_i           (spi_we),
+    .re_i           (spi_re),
+    .addr_i         (spi_addr),
+    .wdata_i        (spi_wdata),
+    .rdata_o        (spi_rdata),
+    .sclk_o         (spi_sclk),
+    .mosi_o         (spi_mosi),
+    .miso_i         (spi_mosi),
+    .cs_o           (spi_cs),
+    .interrupt_o    (spi_interrupt),
+    .debug_state_o  (spi_state),
+    .debug_tx_data_o(spi_tx_data),
+    .debug_rx_data_o(spi_rx_data)
+);
+
+
+// I2C Master实例化
+i2c_master u_i2c_master (
+    .clk_i          (clk_i),
+    .rst_n_i        (rst_n_i),
+    .we_i           (i2c_we),
+    .re_i           (i2c_re),
+    .addr_i         (i2c_addr),
+    .wdata_i        (i2c_wdata),
+    .rdata_o        (i2c_rdata),
+    .sda_io         (i2c_sda),
+    .scl_io         (i2c_scl),
+    .interrupt_o    (i2c_interrupt),
+    .debug_state_o  (i2c_state),
+    .debug_tx_data_o(i2c_tx_data),
+    .debug_rx_data_o(i2c_rx_data),
+    .debug_ack_o    (i2c_ack)
+);
+
+
 csr_regfile u_csr_regfile (
     .clk_i              (clk_i),
     .rst_n_i            (rst_n_i),
@@ -1034,7 +1131,9 @@ interrupt_controller u_interrupt_controller (
     .mtvec_i            (mtvec),
     .intr_pending_o     (intr_pending),
     .intr_cause_o       (intr_cause),
-    .intr_handler_addr_o(intr_handler_addr)
+    .intr_handler_addr_o(intr_handler_addr),
+    .intr_spi_i     (spi_interrupt),     // spi
+    .intr_i2c_i     (i2c_interrupt)     // i2c
 );
 
 interrupt_pipeline u_interrupt_pipeline (
@@ -1233,6 +1332,20 @@ assign debug_timer_count    = timer_count_val;
 assign debug_timer_enable   = timer_enable;
 assign debug_timer_irq_flag = timer_irq_flag;
 assign debug_timer_interrupt = timer_interrupt;
+
+assign debug_spi_interrupt = spi_interrupt;
+assign debug_spi_state = spi_state;
+assign debug_spi_tx_data = spi_tx_data;
+assign debug_spi_rx_data = spi_rx_data;
+
+assign debug_i2c_interrupt = i2c_interrupt;
+assign debug_i2c_state = i2c_state;
+assign debug_i2c_tx_data = i2c_tx_data;
+assign debug_i2c_rx_data = i2c_rx_data;
+assign debug_i2c_ack = i2c_ack;
+
+
+
 
 // ==========================================================================
 // 仿真监控

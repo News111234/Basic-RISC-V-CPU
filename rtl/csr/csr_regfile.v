@@ -1,50 +1,63 @@
 // csr_regfile.v - 修改版，支持独立的 mepc、mcause、mstatus 写入
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: csr_regfile
+// 功能: 控制和状态寄存器(CSR)文件，实现RISC-V机器模式(M-mode)的核心CSR
+// 描述:
+//   该模块包含RISC-V特权架构定义的关键CSR，如mstatus, mtvec, mepc, mcause等。
+//   它提供了多个独立的写端口，允许中断响应逻辑和普通CSR指令同时写入，
+//   避免写冲突。同时，它接收中断输入并自动更新mip(中断待处理)寄存器。
+//
+// 主要CSR:
+//   - mstatus: 机器状态寄存器 (控制全局中断使能等)
+//   - mtvec:   机器陷阱向量基址寄存器
+//   - mepc:    机器异常程序计数器 (保存中断/异常返回地址)
+//   - mcause:  机器异常/中断原因寄存器
+//   - mie:     机器中断使能寄存器
+//   - mip:     机器中断待处理寄存器
+// ============================================================================
 module csr_regfile (
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    
-    // CSR读端口
-    input  wire [11:0] csr_addr_i,
-    output reg  [31:0] csr_rdata_o,
-    
-    // ========== 独立写端口（不再合并）==========
-    // 普通 CSR 指令写
-    input  wire        csr_inst_we_i,
-    input  wire [11:0] csr_inst_waddr_i,
-    input  wire [31:0] csr_inst_wdata_i,
-    
-    // 中断响应写 mepc
-    input  wire        csr_mepc_we_i,
-    input  wire [31:0] csr_mepc_data_i,
-    
-    // 中断响应写 mcause
-    input  wire        csr_mcause_we_i,
-    input  wire [31:0] csr_mcause_data_i,
-    
-    // 中断响应写 mstatus
-    input  wire        csr_mstatus_we_i,
-    input  wire [31:0] csr_mstatus_data_i,
-    
-    // 中断接口
-    input  wire        intr_software_i,
-    input  wire        intr_timer_i,
-    input  wire        intr_external_i,
-    
-    output reg  [31:0] mtvec_o,
-    output reg  [31:0] mepc_o,
-    output reg  [31:0] mcause_o,
-    output reg  [31:0] mie_o,
-    output reg  [31:0] mstatus_o,
-    output reg  [31:0] mip_o,
-    
-    // 调试输出
-    output wire [31:0] debug_mstatus_o,
-    output wire [31:0] debug_mie_o,
-    output wire [31:0] debug_mtvec_o,
-    output wire [31:0] debug_mepc_o,
-    output wire [31:0] debug_mcause_o
+    // ========== 系统接口 ==========
+    input  wire        clk_i,          // 时钟信号
+    input  wire        rst_n_i,        // 复位信号 (低电平有效)
+
+    // ========== CSR读端口 ==========
+    input  wire [11:0] csr_addr_i,     // 要读取的CSR地址
+    output reg  [31:0] csr_rdata_o,    // 读出的CSR值
+
+    // ========== 普通CSR指令写端口 ==========
+    input  wire        csr_inst_we_i,     // CSR指令写使能
+    input  wire [11:0] csr_inst_waddr_i, // CSR指令写地址
+    input  wire [31:0] csr_inst_wdata_i, // CSR指令写数据
+
+    // ========== 中断响应写端口 (独立) ==========
+    input  wire        csr_mepc_we_i,    // 写mepc使能 (中断响应时)
+    input  wire [31:0] csr_mepc_data_i,  // 写入mepc的值 (当前PC)
+    input  wire        csr_mcause_we_i,  // 写mcause使能 (中断响应时)
+    input  wire [31:0] csr_mcause_data_i,// 写入mcause的值 (中断原因)
+    input  wire        csr_mstatus_we_i, // 写mstatus使能 (中断响应时)
+    input  wire [31:0] csr_mstatus_data_i, // 写入mstatus的值 (保存并清除MIE)
+
+    // ========== 中断接口 ==========
+    input  wire        intr_software_i, // 软件中断输入
+    input  wire        intr_timer_i,    // 定时器中断输入
+    input  wire        intr_external_i, // 外部中断输入
+
+    // ========== CSR值输出 (供其他模块使用) ==========
+    output reg  [31:0] mtvec_o,         // 机器陷阱向量基址
+    output reg  [31:0] mepc_o,          // 机器异常PC
+    output reg  [31:0] mcause_o,        // 机器异常/中断原因
+    output reg  [31:0] mie_o,           // 机器中断使能
+    output reg  [31:0] mstatus_o,       // 机器状态
+    output reg  [31:0] mip_o,           // 机器中断待处理
+
+    // ========== 调试输出 ==========
+    output wire [31:0] debug_mstatus_o, // 调试: mstatus值
+    output wire [31:0] debug_mie_o,     // 调试: mie值
+    output wire [31:0] debug_mtvec_o,   // 调试: mtvec值
+    output wire [31:0] debug_mepc_o,    // 调试: mepc值
+    output wire [31:0] debug_mcause_o   // 调试: mcause值
 );
 
 // ========== CSR地址定义 ==========

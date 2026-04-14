@@ -6,19 +6,26 @@
 // ================================================
 `timescale 1ns/1ps
 
+// 模块: branch
+// 功能: 分支判断单元，处理条件分支指令(BEQ, BNE, BLT, BGE, BLTU, BGEU)
+// 描述:
+//   该模块根据指令的funct3字段，比较两个操作数(rs1和rs2)的值，
+//   判断分支条件是否成立。如果分支成立，输出分支目标地址(PC + 偏移量)。
+//   注意: 该模块不产生ALU的zero标志，而是独立进行比较。
+// ============================================================================
 module branch (
     // ========== 输入端口 ==========
-    input  wire [31:0] rs1_data_i,   // 寄存器rs1的值
-    input  wire [31:0] rs2_data_i,   // 寄存器rs2的值
-    input  wire [31:0] pc_i,         // 当前PC值（来自IFU）
-    input  wire [31:0] imm_i,        // 立即数（符号扩展后）
-    input  wire [2:0]  funct3_i,     // funct3字段（区分不同分支）
-    input  wire        branch_i,     // 分支指令标志（来自IDU）
-    input  wire        alu_zero_i,   // ALU的zero标志（来自ALU）
+    input  wire [31:0] rs1_data_i,   // 源寄存器rs1的值
+    input  wire [31:0] rs2_data_i,   // 源寄存器rs2的值
+    input  wire [31:0] pc_i,         // 当前PC值
+    input  wire [31:0] imm_i,        // 分支偏移立即数 (已符号扩展)
+    input  wire [2:0]  funct3_i,     // funct3字段 (区分不同分支指令)
+    input  wire        branch_i,     // 分支指令标志 (是否为分支指令)
+    input  wire        alu_zero_i,   // ALU零标志 (当前未使用，保留)
     
     // ========== 输出端口 ==========
-    output reg         branch_taken_o,  // 分支是否跳转（1=跳转）
-    output reg  [31:0] branch_target_o  // 分支目标地址
+    output reg         branch_taken_o,  // 分支是否跳转 (1: 跳转)
+    output reg  [31:0] branch_target_o  // 分支目标地址 (PC + imm_i)
 );
 
 // ========== 内部信号 ==========

@@ -1,42 +1,62 @@
 // rtl/id/id_top.v (修改版，添加CSR支持)
 `timescale 1ns/1ps
+// ============================================================================
+// 模块: id_top
+// 功能: 译码阶段顶层模块，集成寄存器堆、立即数生成、解码和控制单元
+// 描述:
+//   该模块是流水线译码阶段的核心，负责:
+//   1. 接收IF/ID寄存器的指令和PC
+//   2. 调用decoder和ctrl进行指令译码，生成所有控制信号
+//   3. 调用imm_gen生成立即数
+//   4. 访问寄存器堆，读取rs1和rs2的值
+//   5. 接收来自WB阶段的写回数据(前递)，用于解决RAW冒险
+//   6. 将所有译码结果和控制信号输出到ID/EX寄存器
+// ============================================================================
 module id_top (
-    input  wire        clk,
-    input  wire        rst_n,
-    input  wire [31:0] instr,
-    input  wire [31:0] pc,
-    input  wire        wb_we_i,
-    input  wire [4:0]  wb_rd_addr_i,
-    input  wire [31:0] wb_rd_data_i,
-    output wire [31:0] rs1_data_o,
-    output wire [31:0] rs2_data_o,
-    output wire [31:0] imm_o,
-    output wire [4:0]  rs1_addr_o,
-    output wire [4:0]  rs2_addr_o,
-    output wire [4:0]  rd_addr_o,
-    output wire [3:0]  alu_op_o,
-    output wire        alu_src_o,
-    output wire        mem_we_o,
-    output wire        mem_re_o,
-    output wire [1:0]  wb_sel_o,
-    output wire        reg_we_o,
-    output wire        branch_o,
-    output wire        jump_o,
-    output wire [2:0]  funct3_o,
-    output wire [2:0]  mem_width_o,
-    output wire [6:0]  opcode_o,
+    // ========== 系统接口 ==========
+    input  wire        clk,           // 时钟信号
+    input  wire        rst_n,         // 复位信号 (低电平有效)
 
-    // 新增：CSR相关输出
-    output wire        csr_inst_o,
-    output wire [11:0] csr_addr_o,
-    output wire [2:0]  csr_op_o,
-    output wire [4:0]  csr_zimm_o,
+    // ========== 来自IF/ID寄存器的输入 ==========
+    input  wire [31:0] instr,         // 指令
+    input  wire [31:0] pc,            // 当前PC值
 
-     // 新增：MRET 输出
-    output wire        mret_o,
+    // ========== 来自WB阶段的写回数据 (前递) ==========
+    input  wire        wb_we_i,       // WB阶段寄存器写使能
+    input  wire [4:0]  wb_rd_addr_i,  // WB阶段目标寄存器地址
+    input  wire [31:0] wb_rd_data_i,  // WB阶段写回数据
 
-    // 扩展调试输出
-    output wire [31:0] debug_x0_o,
+    // ========== 输出到ID/EX寄存器 ==========
+    output wire [31:0] rs1_data_o,    // rs1寄存器值
+    output wire [31:0] rs2_data_o,    // rs2寄存器值
+    output wire [31:0] imm_o,         // 立即数
+    output wire [4:0]  rs1_addr_o,    // rs1地址
+    output wire [4:0]  rs2_addr_o,    // rs2地址
+    output wire [4:0]  rd_addr_o,     // 目标寄存器地址
+    output wire [3:0]  alu_op_o,      // ALU操作码
+    output wire        alu_src_o,     // ALU源操作数2选择
+    output wire        mem_we_o,      // 内存写使能
+    output wire        mem_re_o,      // 内存读使能
+    output wire [1:0]  wb_sel_o,      // 写回选择
+    output wire        reg_we_o,      // 寄存器写使能
+    output wire        branch_o,      // 分支指令标志
+    output wire        jump_o,        // 跳转指令标志
+    output wire [2:0]  funct3_o,      // funct3字段
+    output wire [2:0]  mem_width_o,   // 内存访问宽度
+    output wire [6:0]  opcode_o,      // 操作码
+
+    // ========== CSR相关输出 ==========
+    output wire        csr_inst_o,    // CSR指令标志
+    output wire [11:0] csr_addr_o,    // CSR地址
+    output wire [2:0]  csr_op_o,      // CSR操作类型
+    output wire [4:0]  csr_zimm_o,    // CSR立即数
+
+    // ========== MRET输出 ==========
+    output wire        mret_o,        // MRET指令标志
+
+    // ========== 调试输出 ==========
+    // 32个通用寄存器的调试输出 (x0-x31)
+   output wire [31:0] debug_x0_o,
     output wire [31:0] debug_x1_o,
     output wire [31:0] debug_x2_o,
     output wire [31:0] debug_x3_o,
@@ -69,12 +89,11 @@ module id_top (
     output wire [31:0] debug_x30_o,
     output wire [31:0] debug_x31_o,
 
-    output wire [4:0]  debug_rd_addr_o,
-    output wire        debug_reg_we_o,
-    output wire [31:0] debug_imm_value_o,
-    output wire [6:0]  debug_opcode_o
+    output wire [4:0]  debug_rd_addr_o,   // 调试: 目标寄存器地址
+    output wire        debug_reg_we_o,     // 调试: 寄存器写使能
+    output wire [31:0] debug_imm_value_o,  // 调试: 立即数值
+    output wire [6:0]  debug_opcode_o      // 调试: 操作码
 );
-
 
 
 wire [4:0]  rs1_addr;

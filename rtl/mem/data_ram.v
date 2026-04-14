@@ -5,18 +5,40 @@
 // ================================================
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: data_ram
+// 功能: 数据存储器 (RAM)，支持字节/半字/字读写
+// 描述:
+//   该模块实现一个单端口同步写、异步读的数据存储器。
+//   支持有符号和无符号的加载指令(LB/LH/LW/LBU/LHU)，
+//   以及存储指令(SB/SH/SW)。
+//
+//   地址空间: 256个32位字 (深度256，地址范围 0x0000_0000 - 0x0000_03FC)
+//   写操作: 时钟上升沿触发，支持部分字节/半字写入
+//   读操作: 组合逻辑，根据width_i进行符号扩展或零扩展
+//
+//   width_i编码:
+//     3'b000: SB/LB/LBU  - 字节访问
+//     3'b001: SH/LH/LHU  - 半字访问
+//     3'b010: SW/LW      - 字访问
+//     3'b100: LBU        - 无符号字节加载
+//     3'b101: LHU        - 无符号半字加载
+// ============================================================================
 module data_ram (
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    
-    input  wire        we_i,
-    input  wire        re_i,
-    input  wire [2:0]  width_i,    // 000=SB/LB/LBU, 001=SH/LH/LHU, 010=SW/LW
-    input  wire [31:0] addr_i,
-    input  wire [31:0] wdata_i,
-    
-    output reg  [31:0] rdata_o,
-    output wire        ready_o
+    // ========== 系统接口 ==========
+    input  wire        clk_i,          // 时钟信号
+    input  wire        rst_n_i,        // 复位信号 (低电平有效)
+
+    // ========== 控制信号 ==========
+    input  wire        we_i,           // 写使能
+    input  wire        re_i,           // 读使能
+    input  wire [2:0]  width_i,        // 访问宽度
+    input  wire [31:0] addr_i,         // 访问地址
+    input  wire [31:0] wdata_i,        // 写数据
+
+    // ========== 输出端口 ==========
+    output reg  [31:0] rdata_o,        // 读数据 (符号扩展或零扩展)
+    output wire        ready_o         // 就绪信号 (始终为1)
 );
 
 parameter DEPTH = 256;            // 256 x 32-bit words

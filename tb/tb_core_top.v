@@ -48,7 +48,7 @@ wire [4:0]  debug_id_rs1_addr;
 wire [4:0]  debug_id_rs2_addr;
 
 // UART调试信号
-wire [2:0]  debug_uart_state;
+wire [1:0]  debug_uart_state;
 wire [31:0] debug_uart_baud_cnt;
 wire [3:0]  debug_uart_bit_cnt;
 wire [7:0]  debug_uart_shift_reg;
@@ -476,13 +476,13 @@ end
 initial begin
     // 默认 GPIO 输入为 0
     force uut.gpio_in_test = 32'h00000000;
+    #350;
+     //可选：拉高 bit0 测试输入中断
+    force uut.gpio_in_test = 32'h00000001;
+    #150;
+    force uut.gpio_in_test = 32'h00000000;
     #500;
-    // 可选：拉高 bit0 测试输入中断
-    // force uut.gpio_in_test = 32'h00000001;
-    // #100;
-    // force uut.gpio_in_test = 32'h00000000;
-    // #500;
-    // release uut.gpio_in_test;
+    release uut.gpio_in_test;
 end
 
 // ==========================================================================

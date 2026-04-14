@@ -1,23 +1,40 @@
 // rtl/periph/uart_tx.v  UART发送模块
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: uart_tx
+// 功能: UART发送器，实现异步串行发送
+// 描述:
+//   该模块实现UART的物理层发送协议:
+//   1. 空闲时TX引脚为高电平
+//   2. 起始位: 1个低电平位
+//   3. 数据位: 8个数据位，LSB先发送
+//   4. 停止位: 1个高电平位
+//
+//   状态机: IDLE -> START -> DATA[0..7] -> STOP -> IDLE
+//   波特率通过分频系数BAUD_DIV = CLK_FREQ / BAUD_RATE 控制。
+// ============================================================================
 module uart_tx #(
-    parameter CLK_FREQ = 200_000_000,  // 50MHz时钟
+    parameter CLK_FREQ = 200_000_000,  // 时钟频率 (Hz)
     parameter BAUD_RATE = 115200       // 波特率
 ) (
-    input  wire        clk_i,          // 时钟
-    input  wire        rst_n_i,        // 复位
+    // ========== 系统接口 ==========
+    input  wire        clk_i,          // 时钟信号
+    input  wire        rst_n_i,        // 复位信号 (低电平有效)
+
+    // ========== 数据接口 ==========
     input  wire [7:0]  tx_data_i,      // 要发送的数据
     input  wire        tx_valid_i,     // 数据有效信号
-    output reg         tx_ready_o,     // 准备好接收新数据
-    output wire        tx_pin_o,        // 串口TX引脚
+    output reg         tx_ready_o,     // 发送器就绪 (可以接收新数据)
 
-//    // === 新增调试输出 ===
-    output wire [1:0]  debug_state_o,      // 状态机状态
-    output wire [31:0] debug_baud_cnt_o,   // 波特率计数器
-    output wire [3:0]  debug_bit_cnt_o,    // 位计数器
-    output wire [7:0]  debug_shift_reg_o   // 移位寄存器
+    // ========== 串口输出 ==========
+    output wire        tx_pin_o,       // UART TX引脚
 
+    // ========== 调试输出 ==========
+    output wire [1:0]  debug_state_o,      // 调试: 状态机状态
+    output wire [31:0] debug_baud_cnt_o,   // 调试: 波特率计数器
+    output wire [3:0]  debug_bit_cnt_o,    // 调试: 位计数器
+    output wire [7:0]  debug_shift_reg_o   // 调试: 移位寄存器
 );
 
 // 计算波特率分频系数

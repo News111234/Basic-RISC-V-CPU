@@ -1,31 +1,43 @@
 // rtl/id/decoder.v (支持 M 扩展)
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: decoder
+// 功能: 指令解码器，提取指令字段并生成ALU操作码和次级控制信号
+// 描述:
+//   该模块从32位指令中提取opcode、rd、funct3、rs1、rs2、funct7等字段。
+//   根据指令类型(R-type, I-type等)和funct字段，生成ALU操作码(alu_op_o)，
+//   支持I扩展(算术/逻辑)和M扩展(乘除)指令。
+//   同时生成CSR指令的相关字段(csr_addr, csr_op, csr_zimm)和MRET标志。
+// ============================================================================
 module decoder (
-    input  wire [31:0] instr_i,
-    
-    output wire [6:0]  opcode_o,
-    output wire [4:0]  rd_addr_o,
-    output wire [2:0]  funct3_o,
-    output wire [4:0]  rs1_addr_o,
-    output wire [4:0]  rs2_addr_o,
-    output wire [6:0]  funct7_o,
-    
-    output wire [3:0]  alu_op_o,       // 扩展为 4 位以支持 M 扩展
-    output wire        alu_src_o,
-    output wire        mem_we_o,
-    output wire        mem_re_o,
-    output wire [1:0]  wb_sel_o,
-    output wire        reg_we_o,
+    // ========== 输入端口 ==========
+    input  wire [31:0] instr_i,      // 32位指令
 
-    // MRET 输出
-    output wire        mret_o,
-    
-    // CSR相关输出
-    output wire        csr_inst_o,
-    output wire [11:0] csr_addr_o,
-    output wire [2:0]  csr_op_o,
-    output wire [4:0]  csr_zimm_o
+    // ========== 指令字段输出 ==========
+    output wire [6:0]  opcode_o,      // 操作码
+    output wire [4:0]  rd_addr_o,     // 目标寄存器地址
+    output wire [2:0]  funct3_o,      // funct3字段
+    output wire [4:0]  rs1_addr_o,    // 源寄存器1地址
+    output wire [4:0]  rs2_addr_o,    // 源寄存器2地址
+    output wire [6:0]  funct7_o,      // funct7字段
+
+    // ========== ALU和控制信号输出 ==========
+    output wire [3:0]  alu_op_o,      // ALU操作码 (4位，支持M扩展)
+    output wire        alu_src_o,     // ALU源操作数2选择
+    output wire        mem_we_o,      // 内存写使能
+    output wire        mem_re_o,      // 内存读使能
+    output wire [1:0]  wb_sel_o,      // 写回选择信号 (00: ALU, 01: 内存, 10: PC+4, 11: CSR)
+    output wire        reg_we_o,      // 寄存器写使能
+
+    // ========== MRET输出 ==========
+    output wire        mret_o,        // MRET指令标志
+
+    // ========== CSR相关输出 ==========
+    output wire        csr_inst_o,    // CSR指令标志
+    output wire [11:0] csr_addr_o,    // CSR地址 (12位)
+    output wire [2:0]  csr_op_o,      // CSR操作类型 (funct3)
+    output wire [4:0]  csr_zimm_o     // CSR立即数 (来自rs1字段)
 );
 
 // ========== 第一部分：提取指令字段 ==========

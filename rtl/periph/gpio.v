@@ -1,29 +1,48 @@
 // rtl/periph/gpio.v - 修正版
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: gpio
+// 功能: 通用输入输出 (GPIO) 控制器，支持32位双向IO
+// 描述:
+//   该模块实现一个32位GPIO控制器，具有以下特性:
+//   - 每个引脚可独立配置为输入或输出 (通过输出使能OE控制)
+//   - 支持电平触发和边沿触发中断
+//   - 中断标志可软件写1清除
+//
+//   寄存器地址映射:
+//     0x00: GPIO_OUT - 输出数据寄存器
+//     0x04: GPIO_OE  - 输出使能寄存器 (1=输出, 0=输入)
+//     0x08: GPIO_IN  - 输入数据寄存器 (只读)
+//     0x0C: GPIO_IE  - 中断使能寄存器
+//     0x10: GPIO_EDGE - 边沿触发选择 (0=电平, 1=边沿)
+//     0x14: GPIO_IF  - 中断标志寄存器 (写1清除)
+// ============================================================================
 module gpio (
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    
-    // 总线接口
-    input  wire        we_i,
-    input  wire        re_i,
-    input  wire [31:0] addr_i,
-    input  wire [31:0] wdata_i,
-    output reg  [31:0] rdata_o,
-    
-    // 外部引脚 (假设32位GPIO)
-    input  wire [31:0] gpio_in_i,      // 输入引脚
-    output wire [31:0] gpio_out_o,     // 输出引脚 
-    output wire [31:0] gpio_oe_o,      // 输出使能 
-    
-    // 中断输出
-    output wire        interrupt_o,
+    // ========== 系统接口 ==========
+    input  wire        clk_i,          // 时钟信号
+    input  wire        rst_n_i,        // 复位信号 (低电平有效)
 
-    output wire [31:0] debug_gpio_out,
-output wire [31:0] debug_gpio_oe,
-output wire [31:0] debug_gpio_in,
-output wire [31:0] debug_gpio_if
+    // ========== 总线接口 ==========
+    input  wire        we_i,           // 写使能
+    input  wire        re_i,           // 读使能
+    input  wire [31:0] addr_i,         // 寄存器地址
+    input  wire [31:0] wdata_i,        // 写数据
+    output reg  [31:0] rdata_o,        // 读数据
+
+    // ========== 外部引脚 ==========
+    input  wire [31:0] gpio_in_i,      // GPIO输入引脚
+    output wire [31:0] gpio_out_o,     // GPIO输出引脚
+    output wire [31:0] gpio_oe_o,      // GPIO输出使能 (1=输出)
+
+    // ========== 中断输出 ==========
+    output wire        interrupt_o,    // 中断信号 (任何使能的中断发生)
+
+    // ========== 调试输出 ==========
+    output wire [31:0] debug_gpio_out, // 调试: 输出寄存器
+    output wire [31:0] debug_gpio_oe,  // 调试: 输出使能寄存器
+    output wire [31:0] debug_gpio_in,  // 调试: 输入寄存器
+    output wire [31:0] debug_gpio_if   // 调试: 中断标志寄存器
 );
 
 // 寄存器地址偏移

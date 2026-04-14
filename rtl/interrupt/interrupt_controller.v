@@ -1,35 +1,52 @@
 // rtl/interrupt/interrupt_controller.v
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: interrupt_controller
+// 功能: 中断控制器，根据CSR配置判断是否有中断需要处理
+// 描述:
+//   该模块根据mie(中断使能)和mip(中断待处理)寄存器的值，
+//   以及全局中断使能位mstatus.MIE，判断是否有中断等待。
+//   中断优先级: 外部中断(MEI) > 定时器中断(MTI) > 软件中断(MSI)
+//   支持两种中断向量模式:
+//   - 直接模式 (mtvec.MODE=00): 所有中断跳转到同一基址
+//   - 向量模式 (mtvec.MODE=01): 根据中断ID跳转到 base + cause*4
+// ============================================================================
 module interrupt_controller (
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    
-    // 外部中断源
+    // ========== 系统接口 ==========
+    input  wire        clk_i,             // 时钟信号
+    input  wire        rst_n_i,           // 复位信号 (低电平有效)
+
+    // ========== 外部中断源 ==========
     input  wire        intr_software_i,   // 软件中断 (来自CLINT)
     input  wire        intr_timer_i,      // 定时器中断 (来自CLINT)
-    input  wire        intr_external_i,   // 外部中断 (来自PLIC)
-    
-    // CSR接口
-    input  wire [31:0] mie_i,             // 中断使能
-    input  wire [31:0] mip_i,             // 中断待处理
-    input  wire [31:0] mstatus_i,         // 状态寄存器
-    input  wire [31:0] mtvec_i,           // 中断向量
-    
-    // 中断请求输出
-    output wire        intr_pending_o,    // 有中断等待
-    output wire [31:0] intr_cause_o,      // 中断原因
-    output wire [31:0] intr_handler_addr_o // 中断处理程序地址
+    input  wire        intr_external_i,   // 外部中断 (来自PLIC/GPIO)
+    input  wire        intr_spi_i,        // SPI中断
+    input  wire        intr_i2c_i,        // I2C中断
+
+    // ========== CSR接口 ==========
+    input  wire [31:0] mie_i,             // 中断使能寄存器
+    input  wire [31:0] mip_i,             // 中断待处理寄存器
+    input  wire [31:0] mstatus_i,         // 机器状态寄存器
+    input  wire [31:0] mtvec_i,           // 中断向量基址寄存器
+
+    // ========== 中断请求输出 ==========
+    output wire        intr_pending_o,     // 有中断等待 (需要响应)
+    output wire [31:0] intr_cause_o,       // 中断原因 (最高位=1表示中断)
+    output wire [31:0] intr_handler_addr_o // 中断处理程序入口地址
 );
 
 // ========== 中断优先级编码 ==========
 // RISC-V特权规范：
-// 中断ID: 11 = MEI, 7 = MTI, 3 = MSI
-// 优先级: MEI > MTI > MSI (但软件可配置)
+// 中断ID: 3=MSI, 7=MTI, 11=MEI, 12=SPI, 13=I2C
+// 优先级: MEI > MTI > MSI > SPI > I2C (但软件可配置)
 
-wire meip = mie_i[11] && mip_i[11];  // 外部中断使能且待处理
-wire mtip = mie_i[7]  && mip_i[7];   // 定时器中断使能且待处理
-wire msip = mie_i[3]  && mip_i[3];   // 软件中断使能且待处理
+wire meip = mie_i[11] && (mip_i[11] || intr_external_i);  // 外部中断使能且待处理
+wire mtip = mie_i[7]  && (mip_i[7]  || intr_timer_i);   // 定时器中断使能且待处理
+wire msip = mie_i[3]  && (mip_i[3]  || intr_software_i); // 软件中断使能且待处理
+
+wire spip = mie_i[12] && intr_spi_i;  // SPI中断使能且待处理
+wire i2cip = mie_i[13] && intr_i2c_i;  // I2C中断使能且待处理
 
 // 全局中断使能 (M-mode)
 wire global_ie = mstatus_i[3];        // MIE位
@@ -43,13 +60,19 @@ always @(*) begin
     intr_cause = 32'b0;
     
     if (global_ie) begin
-        // 按优先级检查中断
+        // 优先级: MEI > MTI > SPI > I2C > MSI
         if (meip) begin
             intr_valid = 1'b1;
             intr_cause = {1'b1, 31'd11};  // 机器外部中断
         end else if (mtip) begin
             intr_valid = 1'b1;
             intr_cause = {1'b1, 31'd7};   // 机器定时器中断
+        end else if (spip) begin
+            intr_valid = 1'b1;
+            intr_cause = {1'b1, 31'd12};  // SPI中断
+        end else if (i2cip) begin
+            intr_valid = 1'b1;
+            intr_cause = {1'b1, 31'd13};  // I2C中断
         end else if (msip) begin
             intr_valid = 1'b1;
             intr_cause = {1'b1, 31'd3};   // 机器软件中断

@@ -1,35 +1,57 @@
 // rtl/periph/uart_ctrl.v - 循环发送Hello World版本
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: uart_ctrl
+// 功能: UART控制器，带FIFO缓冲，实现串口数据发送
+// 描述:
+//   该模块实现UART发送控制器，具有以下特性:
+//   - 内置16字节FIFO，减少CPU干预
+//   - 自动波特率生成 (可配置)
+//   - 状态寄存器提供FIFO状态和发送状态
+//   - 支持中断(预留)
+//
+//   寄存器地址映射:
+//     0x00: TX_DATA - 发送数据寄存器 (写入即入FIFO)
+//     0x04: STATUS  - 状态寄存器 (只读)
+//     0x08: CTRL    - 控制寄存器 (bit0: tx_enable, bit1: tx_irq_enable)
+//     0x0C: BAUD_DIV - 波特率分频系数
+//
+//   状态寄存器位定义:
+//     [0]: tx_ready    - 发送器空闲
+//     [1]: tx_busy     - 正在发送
+//     [2]: fifo_not_full - FIFO未满
+//     [3]: fifo_empty  - FIFO空
+//     [4]: fifo_full   - FIFO满
+//     [7:5]: fifo_count - FIFO中的数据个数
+// ============================================================================
 module uart_ctrl #(
-    parameter CLK_FREQ = 200_000_000,
-    parameter BAUD_RATE = 115200,
-    parameter FIFO_DEPTH = 16,
-    parameter FIFO_ADDR_WIDTH = 4
+    parameter CLK_FREQ = 200_000_000,      // 时钟频率 (Hz)
+    parameter BAUD_RATE = 115200,          // 波特率
+    parameter FIFO_DEPTH = 16,             // FIFO深度
+    parameter FIFO_ADDR_WIDTH = 4          // FIFO地址宽度
 ) (
     // ========== 系统接口 ==========
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    
+    input  wire        clk_i,             // 时钟信号
+    input  wire        rst_n_i,           // 复位信号 (低电平有效)
+
     // ========== CPU总线接口 ==========
-    input  wire        we_i,
-    input  wire [31:0] addr_i,
-    input  wire [31:0] wdata_i,
-    output reg  [31:0] rdata_o,
-    
+    input  wire        we_i,              // 写使能
+    input  wire [31:0] addr_i,            // 寄存器地址
+    input  wire [31:0] wdata_i,           // 写数据
+    output reg  [31:0] rdata_o,           // 读数据
+
     // ========== 串口物理接口 ==========
-    output wire        tx_pin_o,
-    
+    output wire        tx_pin_o,          // 串口TX引脚
+
     // ========== 调试输出 ==========
-    output wire [1:0]  debug_state_o,
-    output wire [31:0] debug_baud_cnt_o,
-    output wire [3:0]  debug_bit_cnt_o,
-    output wire [7:0]  debug_shift_reg_o,
-    
-    // ========== 数据监测 ==========
-    output wire [7:0]  tx_data_o,
-    output wire        tx_valid_o,
-    
+    output wire [1:0]  debug_state_o,     // 调试: UART状态机
+    output wire [31:0] debug_baud_cnt_o,  // 调试: 波特率计数器
+    output wire [3:0]  debug_bit_cnt_o,   // 调试: 位计数器
+    output wire [7:0]  debug_shift_reg_o, // 调试: 移位寄存器
+    output wire [7:0]  tx_data_o,         // 调试: 发送数据
+    output wire        tx_valid_o,        // 调试: 发送有效
+    // ... (debug_fifo_data1_o 到 debug_fifo_data15_o)
     // ========== FIFO调试信号 ==========
     output wire [7:0]  debug_fifo_data0_o,
     output wire [7:0]  debug_fifo_data1_o,
@@ -48,18 +70,18 @@ module uart_ctrl #(
     output wire [7:0]  debug_fifo_data14_o,
     output wire [7:0]  debug_fifo_data15_o,
 
-    output wire        debug_fifo_we_reg_o,
-    output wire [FIFO_ADDR_WIDTH-1:0] debug_wr_ptr_o,
-    output wire [FIFO_ADDR_WIDTH-1:0] debug_rd_ptr_o,
-    output wire [FIFO_ADDR_WIDTH:0]   debug_fifo_count_o,
-    output wire        debug_fifo_full_o,
-    output wire        debug_fifo_empty_o,
-    output wire        debug_fifo_we_o,
-    output wire        debug_fifo_re_o,
-    output wire [7:0]  debug_fifo_out_data_o,
-    output wire        direct_transfer_o,
-    output wire [7:0]  data_to_send_o,
-    output wire        tx_ready_o
+    output wire        debug_fifo_we_reg_o, // 调试: FIFO写使能
+    output wire [3:0]  debug_wr_ptr_o,     // 调试: 写指针
+    output wire [3:0]  debug_rd_ptr_o,     // 调试: 读指针
+    output wire [4:0]  debug_fifo_count_o, // 调试: FIFO计数
+    output wire        debug_fifo_full_o,  // 调试: FIFO满
+    output wire        debug_fifo_empty_o, // 调试: FIFO空
+    output wire        debug_fifo_we_o,    // 调试: FIFO写
+    output wire        debug_fifo_re_o,    // 调试: FIFO读
+    output wire [7:0]  debug_fifo_out_data_o, // 调试: FIFO输出
+    output wire        direct_transfer_o,  // 调试: 直通标志
+    output wire [7:0]  data_to_send_o,     // 调试: 待发送数据
+    output wire        tx_ready_o          // 调试: 发送器就绪
 );
 
 // ========== 寄存器地址定义 ==========

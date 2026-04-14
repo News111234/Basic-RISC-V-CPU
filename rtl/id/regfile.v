@@ -1,50 +1,46 @@
 // rtl/id/regfile.v (增强调试版)
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: regfile
+// 功能: 通用寄存器堆，包含32个32位寄存器 (x0-x31)
+// 描述:
+//   该模块实现RISC-V架构定义的32个通用寄存器。
+//   特性:
+//   1. 两个读端口，一个写端口
+//   2. x0寄存器硬连线为0，写入无效
+//   3. 写操作在时钟上升沿触发
+//   4. 读操作是组合逻辑，支持读后写转发(当读地址等于写地址且写使能有效时，
+//      直接返回正在写入的新值，避免RAW冒险)
+//   5. 提供所有寄存器的调试输出
+// ============================================================================
 module regfile (
-    input  wire        clk,
-    input  wire        rst_n,
-    input  wire [4:0]  raddr1_i,
-    output reg  [31:0] rdata1_o,
-    input  wire [4:0]  raddr2_i,
-    output reg  [31:0] rdata2_o,
-    input  wire        we_i,
-    input  wire [4:0]  waddr_i,
-    input  wire [31:0] wdata_i,
-    
-    // 扩展调试输出 - 输出所有32个寄存器
-    output wire [31:0] debug_x0_o,
-    output wire [31:0] debug_x1_o,
-    output wire [31:0] debug_x2_o,
-    output wire [31:0] debug_x3_o,
-    output wire [31:0] debug_x4_o,
-    output wire [31:0] debug_x5_o,
-    output wire [31:0] debug_x6_o,
-    output wire [31:0] debug_x7_o,
-    output wire [31:0] debug_x8_o,
-    output wire [31:0] debug_x9_o,
-    output wire [31:0] debug_x10_o,
-    output wire [31:0] debug_x11_o,
-    output wire [31:0] debug_x12_o,
-    output wire [31:0] debug_x13_o,
-    output wire [31:0] debug_x14_o,
-    output wire [31:0] debug_x15_o,
-    output wire [31:0] debug_x16_o,
-    output wire [31:0] debug_x17_o,
-    output wire [31:0] debug_x18_o,
-    output wire [31:0] debug_x19_o,
-    output wire [31:0] debug_x20_o,
-    output wire [31:0] debug_x21_o,
-    output wire [31:0] debug_x22_o,
-    output wire [31:0] debug_x23_o,
-    output wire [31:0] debug_x24_o,
-    output wire [31:0] debug_x25_o,
-    output wire [31:0] debug_x26_o,
-    output wire [31:0] debug_x27_o,
-    output wire [31:0] debug_x28_o,
-    output wire [31:0] debug_x29_o,
-    output wire [31:0] debug_x30_o,
-    output wire [31:0] debug_x31_o
+    // ========== 系统接口 ==========
+    input  wire        clk,           // 时钟信号
+    input  wire        rst_n,         // 复位信号 (低电平有效)
+
+    // ========== 读端口1 ==========
+    input  wire [4:0]  raddr1_i,      // 读地址1
+    output reg  [31:0] rdata1_o,      // 读数据1
+
+    // ========== 读端口2 ==========
+    input  wire [4:0]  raddr2_i,      // 读地址2
+    output reg  [31:0] rdata2_o,      // 读数据2
+
+    // ========== 写端口 ==========
+    input  wire        we_i,          // 写使能
+    input  wire [4:0]  waddr_i,       // 写地址
+    input  wire [31:0] wdata_i,       // 写数据
+
+    // ========== 调试输出 (所有32个寄存器的值) ==========
+    output wire [31:0] debug_x0_o,  debug_x1_o,  debug_x2_o,  debug_x3_o,
+    output wire [31:0] debug_x4_o,  debug_x5_o,  debug_x6_o,  debug_x7_o,
+    output wire [31:0] debug_x8_o,  debug_x9_o,  debug_x10_o, debug_x11_o,
+    output wire [31:0] debug_x12_o, debug_x13_o, debug_x14_o, debug_x15_o,
+    output wire [31:0] debug_x16_o, debug_x17_o, debug_x18_o, debug_x19_o,
+    output wire [31:0] debug_x20_o, debug_x21_o, debug_x22_o, debug_x23_o,
+    output wire [31:0] debug_x24_o, debug_x25_o, debug_x26_o, debug_x27_o,
+    output wire [31:0] debug_x28_o, debug_x29_o, debug_x30_o, debug_x31_o
 );
 
 reg [31:0] registers [0:31];

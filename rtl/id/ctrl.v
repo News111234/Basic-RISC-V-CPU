@@ -1,28 +1,38 @@
 // rtl/id/ctrl.v (修改版，添加CSR支持)
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: ctrl
+// 功能: 主控制单元，根据指令操作码生成流水线控制信号
+// 描述:
+//   该模块对指令进行译码，生成执行阶段所需的各种控制信号。
+//   它根据opcode(操作码)和funct3/funct7字段识别指令类型
+//   (R型、I型、加载、存储、分支、跳转、LUI、AUIPC、系统指令等)，
+//   并输出相应的控制信号，如ALU源选择、寄存器写使能、内存读写使能、
+//   分支/跳转标志、CSR指令标志和MRET标志等。
+// ============================================================================
 module ctrl (
     // ========== 输入端口 ==========
-    input  wire [6:0]  opcode_i,   // 操作码（7位）
-    input  wire [2:0]  funct3_i,   // 功能码3位
-    input  wire [6:0]  funct7_i,   // 功能码7位
-    input  wire [31:0] instr_i,    // 新增：完整指令（用于识别 MRET）
+    input  wire [6:0]  opcode_i,   // 指令操作码 (7位)
+    input  wire [2:0]  funct3_i,   // 功能码3位 (用于区分子类型)
+    input  wire [6:0]  funct7_i,   // 功能码7位 (用于区分R型指令)
+    input  wire [31:0] instr_i,    // 完整指令 (用于识别MRET)
 
     // ========== 输出端口：主要控制信号 ==========
-    output wire        alu_src_o,
-    output wire        mem_to_reg_o,
-    output wire        reg_write_o,
-    output wire        mem_read_o,
-    output wire        mem_write_o,
-    output wire        branch_o,
-    output wire        jump_o,
+    output wire        alu_src_o,   // ALU源操作数2选择 (0: rs2, 1: 立即数)
+    output wire        mem_to_reg_o, // 内存数据写回寄存器标志 (用于WB)
+    output wire        reg_write_o,  // 寄存器写使能
+    output wire        mem_read_o,   // 内存读使能
+    output wire        mem_write_o,  // 内存写使能
+    output wire        branch_o,     // 分支指令标志
+    output wire        jump_o,       // 跳转指令标志 (JAL/JALR/MRET)
     
-    // 新增：CSR控制信号
-    output wire        csr_inst_o,    // CSR指令标志
-    output wire        csr_write_o,    // CSR写使能
+    // ========== CSR控制信号 ==========
+    output wire        csr_inst_o,   // CSR指令标志
+    output wire        csr_write_o,  // CSR写使能 (指令类型标志)
 
-      // 新增：MRET 信号
-    output wire        mret_o         // MRET 指令标志
+    // ========== MRET信号 ==========
+    output wire        mret_o        // MRET指令标志 (用于中断返回)
 );
 
 // ========== 第一部分：指令类型识别 ==========

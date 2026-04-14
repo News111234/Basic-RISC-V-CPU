@@ -4,21 +4,33 @@
 // ================================================
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: mem_ctrl
+// 功能: 内存访问控制器，处理地址对齐检查和地址合法性检查
+// 描述:
+//   该模块对内存访问请求进行预处理:
+//   1. 地址对齐检查: LW/SW地址必须2字节对齐，LH/SH地址必须1字节对齐
+//   2. 地址合法性检查: 当前假设有效地址范围为 0x0000_0000 ~ 0x0FFF_FFFF
+//   3. 如果地址未对齐或超出范围，产生异常信号并阻止内存访问
+// ============================================================================
 module mem_ctrl (
-    input  wire [31:0] alu_result_i,
-    input  wire [31:0] wdata_i,
-    input  wire        mem_we_i,
-    input  wire        mem_re_i,
-    input  wire [2:0]  mem_width_i,
-    
-    output wire [31:0] mem_addr_o,
-    output wire [31:0] mem_wdata_o,
-    output wire        mem_we_o,
-    output wire        mem_re_o,
-    output wire [2:0]  mem_width_o,
-    
-    output wire        mem_misalign_o,
-    output wire        mem_error_o
+    // ========== 来自EX阶段的数据 ==========
+    input  wire [31:0] alu_result_i,   // ALU结果 (作为内存地址)
+    input  wire [31:0] wdata_i,        // 写数据
+    input  wire        mem_we_i,       // 内存写使能
+    input  wire        mem_re_i,       // 内存读使能
+    input  wire [2:0]  mem_width_i,    // 访问宽度
+
+    // ========== 输出到内存 ==========
+    output wire [31:0] mem_addr_o,     // 内存地址
+    output wire [31:0] mem_wdata_o,    // 内存写数据
+    output wire        mem_we_o,       // 内存写使能 (对齐检查后)
+    output wire        mem_re_o,       // 内存读使能 (对齐检查后)
+    output wire [2:0]  mem_width_o,    // 访问宽度
+
+    // ========== 异常输出 ==========
+    output wire        mem_misalign_o, // 地址未对齐异常
+    output wire        mem_error_o     // 地址越界异常
 );
 
 // ========== 地址对齐检查 ==========

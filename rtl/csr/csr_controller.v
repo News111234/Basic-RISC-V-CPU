@@ -1,33 +1,46 @@
 // rtl/csr/csr_controller.v
 `timescale 1ns/1ps
 
+// ============================================================================
+// 模块: csr_controller
+// 功能: 控制和状态寄存器(CSR)指令的执行控制器
+// 描述:
+//   该模块接收来自译码阶段的CSR指令信息，并根据RISC-V特权架构规范
+//   计算CSR的写数据和写使能信号。它负责处理CSRRW, CSRRS, CSRRC及其
+//   立即数版本(CSRRWI, CSRRSI, CSRRCI)共6种CSR操作。
+//
+//   核心逻辑: 根据操作码(csr_op_i)，将源操作数(rs1或立即数)与当前
+//   CSR值(csr_rdata_i)进行运算，生成新的CSR写回值。
+//   指令的最终结果(csr_result_o)总是读取到的CSR旧值。
+// ============================================================================
 module csr_controller (
-    input  wire        clk_i,
-    input  wire        rst_n_i,
-    
-    // 来自ID阶段的CSR指令
-    input  wire        csr_inst_valid_i,   // CSR指令有效
-    input  wire [2:0]  csr_op_i,           // CSR操作类型
-    input  wire [11:0] csr_addr_i,         // CSR地址
-    input  wire [4:0]  csr_rs1_addr_i,     // rs1地址（用于CSRRW/CSRRS/CSRRC）
-    input  wire [31:0] csr_imm_i,          // 立即数（用于CSRRWI/CSRRSI/CSRRCI）
-    
-    // 来自寄存器堆的数据
-    input  wire [31:0] rs1_data_i,
-    
-    // 来自CSR寄存器文件的数据
-    input  wire [31:0] csr_rdata_i,
-    
-    // 到CSR寄存器文件的写控制
-    output reg         csr_we_o,
-    output reg  [11:0] csr_waddr_o,
-    output reg  [31:0] csr_wdata_o,
-    
-    // 到EX阶段的输出
-    output reg  [31:0] csr_result_o,       // CSR指令结果（用于写回）
-    
-    // 调试输出
-    output wire [31:0] debug_csr_result_o
+    // ========== 系统接口 ==========
+    input  wire        clk_i,          // 时钟信号
+    input  wire        rst_n_i,        // 复位信号 (低电平有效)
+
+    // ========== 来自ID阶段的CSR指令信息 ==========
+    input  wire        csr_inst_valid_i, // CSR指令有效标志
+    input  wire [2:0]  csr_op_i,       // CSR操作类型 (3'b001-3'b111)
+    input  wire [11:0] csr_addr_i,     // CSR地址 (12位)
+    input  wire [4:0]  csr_rs1_addr_i, // rs1寄存器地址 (用于寄存器版本)
+    input  wire [31:0] csr_imm_i,      // 立即数 (用于立即数版本)
+
+    // ========== 来自寄存器堆的数据 ==========
+    input  wire [31:0] rs1_data_i,     // rs1寄存器的值
+
+    // ========== 来自CSR寄存器文件的数据 ==========
+    input  wire [31:0] csr_rdata_i,    // 当前读出的CSR值
+
+    // ========== 到CSR寄存器文件的写控制 ==========
+    output reg         csr_we_o,       // CSR写使能
+    output reg  [11:0] csr_waddr_o,    // CSR写地址
+    output reg  [31:0] csr_wdata_o,    // CSR写数据
+
+    // ========== 到EX阶段的输出 ==========
+    output reg  [31:0] csr_result_o,   // CSR指令的结果 (用于写回寄存器堆)
+
+    // ========== 调试输出 ==========
+    output wire [31:0] debug_csr_result_o // 调试: CSR指令结果
 );
 
 // ========== CSR操作类型定义 ==========
